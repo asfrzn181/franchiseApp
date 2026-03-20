@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    volumes:
+      - .:/app
+    ports:
+      - "5173:5173"  # Port Vue
+      - "4001:4000"  # Geser ke 4001
+      - "8888:8080"  # Firestore: Laptop akses 8888, Docker tetap 8080
+      - "9100:9099"  # Auth: Laptop akses 9100
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null  # Tambahan: Paksa container tetap hidup

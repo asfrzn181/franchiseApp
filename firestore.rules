@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Fungsi bantuan cek login
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    match /users/{userId} {
+      // PENTING: Izinkan user (termasuk staff baru) membuat profilnya sendiri
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Izinkan baca & update jika itu miliknya sendiri
+      allow read, update: if isAuthenticated() && request.auth.uid == userId;
+
+      // OWNER: Izinkan Owner membaca data staff yang memiliki outlet_id yang sama
+      allow read: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id == resource.data.outlet_id;
+    }
+
+    match /outlets/{outletId} {
+      // Hanya anggota outlet yang bisa baca data gerainya
+      allow read: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id == outletId;
+      
+      // Hanya Owner yang bisa edit data outlet
+      allow write: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id == outletId;
+    }
+
+    // Aturan Global untuk sub-koleksi di masa depan (ingredients, sales, dll)
+    match /{allPaths=**} {
+      allow read, write: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id != null;
+    }
+  }
+}
