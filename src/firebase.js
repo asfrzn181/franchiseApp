@@ -2,14 +2,16 @@ import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// Your web app's Firebase configuration
+// Konfigurasi Firebase dibaca dari environment variables
+// Lokal: dari file .env.local (tidak di-push ke GitHub)
+// GitHub Actions: dari GitHub Secrets
 export const firebaseConfig = {
-  apiKey: "AIzaSyB8WQaZmOw5POUs2TvCA-89AyyFSn4uuCM",
-  authDomain: "franchise-pos-959d6.firebaseapp.com",
-  projectId: "franchise-pos-959d6",
-  storageBucket: "franchise-pos-959d6.firebasestorage.app",
-  messagingSenderId: "716844697746",
-  appId: "1:716844697746:web:bfd9b461d9d2f326157e4b"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // Inisialisasi Firebase untuk aplikasi utama
