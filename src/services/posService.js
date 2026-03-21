@@ -9,13 +9,22 @@ import {
 // INGREDIENTS (BAHAN BAKU)
 // ─────────────────────────────────────────────
 
-export const getIngredientsByOutlet = async (outletId) => {
-  const q = query(
-    collection(db, 'ingredients'),
-    where('outlet_id', '==', outletId)
-  );
-  const snap = await getDocs(q);
-  const ingredients = snap.docs.map(d => ({ id: d.id, stock: 0, costPerUnit: 0, ...d.data() }));
+export const getIngredientsByOutlet = async (outletIdOrArray) => {
+  let allDocs = [];
+  if (Array.isArray(outletIdOrArray)) {
+    if (outletIdOrArray.length === 0) return [];
+    for (let i = 0; i < outletIdOrArray.length; i += 30) {
+      const chunk = outletIdOrArray.slice(i, i + 30);
+      const q = query(collection(db, 'ingredients'), where('outlet_id', 'in', chunk));
+      const snap = await getDocs(q);
+      allDocs.push(...snap.docs);
+    }
+  } else {
+    const q = query(collection(db, 'ingredients'), where('outlet_id', '==', outletIdOrArray));
+    const snap = await getDocs(q);
+    allDocs = snap.docs;
+  }
+  const ingredients = allDocs.map(d => ({ id: d.id, stock: 0, costPerUnit: 0, ...d.data() }));
   return ingredients.sort((a, b) => a.name.localeCompare(b.name));
 };
 
@@ -251,13 +260,22 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
   return orderRef.id;
 };
 
-export const getOrdersByOutlet = async (outletId) => {
-  const q = query(
-    collection(db, 'orders'),
-    where('outlet_id', '==', outletId)
-  );
-  const snap = await getDocs(q);
-  const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+export const getOrdersByOutlet = async (outletIdOrArray) => {
+  let allDocs = [];
+  if (Array.isArray(outletIdOrArray)) {
+    if (outletIdOrArray.length === 0) return [];
+    for (let i = 0; i < outletIdOrArray.length; i += 30) {
+      const chunk = outletIdOrArray.slice(i, i + 30);
+      const q = query(collection(db, 'orders'), where('outlet_id', 'in', chunk));
+      const snap = await getDocs(q);
+      allDocs.push(...snap.docs);
+    }
+  } else {
+    const q = query(collection(db, 'orders'), where('outlet_id', '==', outletIdOrArray));
+    const snap = await getDocs(q);
+    allDocs = snap.docs;
+  }
+  const orders = allDocs.map(d => ({ id: d.id, ...d.data() }));
   return orders.sort((a,b) => {
     const timeA = a.created_at?.toMillis ? a.created_at.toMillis() : 0;
     const timeB = b.created_at?.toMillis ? b.created_at.toMillis() : 0;

@@ -18,13 +18,23 @@
     <!-- ─── LAPORAN PENJUALAN ─── -->
     <template v-else-if="activeView === 'sales'">
       <div class="filters-row">
-        <label>Pilih Rentang Waktu:</label>
-        <select v-model="timeRange" @change="applySalesFilter" class="filter-select">
-          <option value="today">Hari Ini</option>
-          <option value="week">7 Hari Terakhir</option>
-          <option value="month">Bulan Ini</option>
-          <option value="all">Semua Waktu</option>
-        </select>
+        <div class="filter-group" v-if="userRole === 'owner' || userRole === 'superadmin'">
+          <label>Pilih Cabang:</label>
+          <select v-model="reportOutletId" @change="fetchReportData" class="filter-select">
+            <option value="all">Semua Cabang (Laporan Gabungan)</option>
+            <option v-for="o in ownerOutlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label>Rentang Waktu:</label>
+          <select v-model="timeRange" @change="applySalesFilter" class="filter-select">
+            <option value="today">Hari Ini</option>
+            <option value="week">7 Hari Terakhir</option>
+            <option value="month">Bulan Ini</option>
+            <option value="all">Semua Waktu</option>
+          </select>
+        </div>
       </div>
 
       <div class="summary-cards" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
@@ -138,7 +148,11 @@ const loading = ref(true);
 const activeTab = ref('sales');
 const activeView = computed(() => activeTab.value);
 
-const outletId = ref('');
+const outletId = ref(''); // active context
+const userRole = ref('');
+const reportOutletId = ref('all');
+const ownerOutlets = ref([]);
+
 const allOrders = ref([]);
 const filteredOrders = ref([]);
 const allExpenses = ref([]);
@@ -242,34 +256,85 @@ const stockSummary = computed(() => {
 });
 
 
+const fetchReportData = async () => {
+  loading.value = true;
+  try {
+    let targetIds = [];
+    if (reportOutletId.value === 'all') {
+      targetIds = ownerOutlets.value.map(o => o.id);
+    } else if (reportOutletId.value) {
+      targetIds = [reportOutletId.value];
+    } else if (outletId.value) {
+      targetIds = [outletId.value]; // fallback for staff
+    }
+
+    if (targetIds.length === 0) {
+      allOrders.value = [];
+      allExpenses.value = [];
+      ingredients.value = [];
+      applySalesFilter();
+      return;
+    }
+
+    // Fetch expenses with batching for 'in' limits
+    let allExpDocs = [];
+    for (let i = 0; i < targetIds.length; i += 30) {
+      const chunk = targetIds.slice(i, i + 30);
+      const qExp = query(collection(db, 'expenses'), where('outlet_id', 'in', chunk));
+      const expSnap = await getDocs(qExp);
+      allExpDocs.push(...expSnap.docs);
+    }
+    allExpenses.value = allExpDocs.map(d => ({ id: d.id, ...d.data() }));
+
+    const [ordrs, ings] = await Promise.all([
+      getOrdersByOutlet(targetIds),
+      getIngredientsByOutlet(targetIds)
+    ]);
+    
+    allOrders.value = ordrs;
+    ingredients.value = ings;
+    
+    applySalesFilter(); 
+  } catch (err) {
+    console.error(err);
+  } finally {
+    loading.value = false;
+  }
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
     const user = auth.currentUser;
     if (!user) return;
     const snap = await getDoc(doc(db, 'users', user.uid));
-    let oid = snap.data()?.outlet_id || localStorage.getItem('active_outlet_id');
-    if (oid === 'undefined') oid = null;
+    const userData = snap.data() || {};
+    userRole.value = userData.role || '';
     
+    let oid = userData.outlet_id || localStorage.getItem('active_outlet_id');
+    if (oid === 'undefined') oid = null;
     outletId.value = oid || '';
-    if (outletId.value) {
-      const qExp = query(collection(db, 'expenses'), where('outlet_id', '==', outletId.value));
-      const expSnap = await getDocs(qExp);
-
-      const [ordrs, ings] = await Promise.all([
-        getOrdersByOutlet(outletId.value),
-        getIngredientsByOutlet(outletId.value)
-      ]);
+    
+    // Fetch user's outlets securely
+    if (userRole.value === 'owner' || userRole.value === 'superadmin') {
+      const qOut = userRole.value === 'owner' 
+        ? query(collection(db, 'outlets'), where('owner_id', '==', user.uid))
+        : collection(db, 'outlets');
+      const snapOut = await getDocs(qOut);
+      ownerOutlets.value = snapOut.docs.map(d => ({id: d.id, ...d.data()}));
       
-      allOrders.value = ordrs;
-      ingredients.value = ings;
-      allExpenses.value = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-      
-      applySalesFilter(); // Apply initial filter
+      // Default to "all" for owners
+      if (ownerOutlets.value.length > 0) {
+        reportOutletId.value = 'all'; 
+      }
+    } else {
+      // Staff falls back to their single assigned outlet
+      reportOutletId.value = outletId.value;
     }
+
+    await fetchReportData();
   } catch (err) {
     console.error(err);
-  } finally {
     loading.value = false;
   }
 };
