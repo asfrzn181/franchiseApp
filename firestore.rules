@@ -21,14 +21,24 @@ service cloud.firestore {
     }
 
     match /outlets/{outletId} {
-      // Hanya anggota outlet yang bisa baca data gerainya
+      // Anggota outlet bisa baca data gerainya
       allow read: if isAuthenticated() && 
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id == outletId;
       
-      // Hanya Owner yang bisa edit data outlet
-      allow write: if isAuthenticated() && 
+      // OWNER: Bisa baca outlet yang ia miliki (owner_id), termasuk owner baru yang belum punya outlet_id
+      allow read: if isAuthenticated() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.outlet_id == outletId;
+        resource.data.owner_id == request.auth.uid;
+
+      // Owner yang sudah punya outlet bisa edit outlet aktifnya
+      allow update, delete: if isAuthenticated() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+        resource.data.owner_id == request.auth.uid;
+
+      // Owner bisa membuat outlet baru (termasuk owner baru yang belum punya outlet_id)
+      allow create: if isAuthenticated() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner' &&
+        request.resource.data.owner_id == request.auth.uid;
     }
 
     // Aturan Global untuk sub-koleksi di masa depan (ingredients, sales, dll)

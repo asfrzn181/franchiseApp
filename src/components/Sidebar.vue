@@ -12,38 +12,52 @@
       </router-link>
 
       <!-- Owner/Admin menus -->
-      <router-link to="/admin/manage-staff" class="nav-item" @click="$emit('close')">
-        <span class="icon">👥</span> Manajemen Staff
-      </router-link>
-
-      <router-link to="/admin/manage-outlets" class="nav-item" @click="$emit('close')">
-        <span class="icon">🏪</span> Kelola Outlet
-      </router-link>
-
-      <router-link to="/admin/master-ingredients" class="nav-item" @click="$emit('close')">
-        <span class="icon">🌾</span> Master Bahan Baku
-      </router-link>
-
-      <router-link to="/admin/master-recipes" class="nav-item" @click="$emit('close')">
-        <span class="icon">🍵</span> Master Produk (Resep)
-      </router-link>
+      <div class="nav-group" v-if="userRole === 'owner' || userRole === 'superadmin'">
+        <h3 class="nav-group-title">Manajemen (Owner)</h3>
+        <router-link to="/admin/manage-staff" class="nav-item" @click="$emit('close')">
+          <span class="icon">👥</span> Manajemen Staff
+        </router-link>
+        <router-link to="/admin/manage-outlets" class="nav-item" @click="$emit('close')">
+          <span class="icon">🏪</span> Kelola Outlet
+        </router-link>
+        <router-link to="/admin/master-ingredients" class="nav-item" @click="$emit('close')">
+          <span class="icon">🌾</span> Master Bahan Baku
+        </router-link>
+        <router-link to="/admin/master-recipes" class="nav-item" @click="$emit('close')">
+          <span class="icon">🍵</span> Master Produk (Resep)
+        </router-link>
+      </div>
 
       <!-- Operasional menus -->
-      <router-link to="/pos" class="nav-item" @click="$emit('close')">
-        <span class="icon">🛒</span> Kasir (POS)
-      </router-link>
+      <div class="nav-group">
+        <h3 class="nav-group-title">Operasional Outlet</h3>
+        <router-link to="/pos" class="nav-item" @click="$emit('close')">
+          <span class="icon">🛒</span> Kasir (POS)
+        </router-link>
+        <router-link to="/inventory" class="nav-item" @click="$emit('close')">
+          <span class="icon">📦</span> Stok & Inventaris
+        </router-link>
+        <router-link to="/history" class="nav-item" @click="$emit('close')">
+          <span class="icon">📜</span> Riwayat Transaksi
+        </router-link>
+      </div>
 
-      <router-link to="/inventory" class="nav-item" @click="$emit('close')">
-        <span class="icon">📦</span> Stok & Inventaris
-      </router-link>
-
-      <router-link to="/reports" class="nav-item" @click="$emit('close')">
-        <span class="icon">📊</span> Laporan Penjualan
-      </router-link>
-
-      <router-link to="/history" class="nav-item" @click="$emit('close')">
-        <span class="icon">📜</span> Riwayat Transaksi
-      </router-link>
+      <!-- Akuntansi & Keuangan -->
+      <div class="nav-group">
+        <h3 class="nav-group-title">Keuangan & Akuntansi</h3>
+        <router-link to="/expenses" class="nav-item" @click="$emit('close')">
+          <span class="icon">💸</span> Pengeluaran Kas
+        </router-link>
+        <router-link to="/ledger" class="nav-item" @click="$emit('close')">
+          <span class="icon">📓</span> Buku Besar (Ledger)
+        </router-link>
+        <router-link to="/balance-sheet" class="nav-item" @click="$emit('close')">
+          <span class="icon">⚖️</span> Neraca Keuangan
+        </router-link>
+        <router-link to="/reports" class="nav-item" @click="$emit('close')">
+          <span class="icon">📊</span> Laporan Penjualan (P&L)
+        </router-link>
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -152,12 +166,28 @@ onMounted(() => {
 .sidebar-nav {
   flex-grow: 1;
   padding: 1rem 0;
+  overflow-y: auto;
+}
+
+/* Custom Scrollbar for Sidebar */
+.sidebar-nav::-webkit-scrollbar {
+  width: 6px;
+}
+.sidebar-nav::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+.sidebar-nav::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  padding: 1rem 1.5rem;
+  padding: 0.8rem 1.5rem;
   color: rgba(255,255,255,0.8);
   text-decoration: none;
   transition: 0.3s;
@@ -172,6 +202,20 @@ onMounted(() => {
   background: #3d7a35; /* Warna highlight hijau terang sesuai gambar */
   color: white;
   border-left: 4px solid #8bc34a;
+}
+
+.nav-group {
+  margin-bottom: 0.5rem;
+}
+
+.nav-group-title {
+  padding: 0 1.5rem;
+  font-size: 0.75rem;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 1.5rem 0 0.5rem 0;
 }
 
 .icon {

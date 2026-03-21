@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHashHistory } from 'vue-router';
 import { auth, db } from '../firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -70,6 +70,9 @@ const routes = [
 
       // ERP / Operasional (Outlet Specific)
       { path: 'inventory', name: 'Inventory', component: () => import('../views/erp/Inventory.vue'), meta: { requiresOutlet: true } },
+      { path: 'expenses', name: 'Expenses', component: () => import('../views/erp/Expenses.vue'), meta: { requiresOutlet: true } },
+      { path: 'ledger', name: 'Ledger', component: () => import('../views/erp/Ledger.vue'), meta: { requiresOutlet: true } },
+      { path: 'balance-sheet', name: 'BalanceSheet', component: () => import('../views/erp/BalanceSheet.vue'), meta: { requiresOutlet: true } },
       { path: 'reports', name: 'Reports', component: () => import('../views/erp/Reports.vue'), meta: { requiresOutlet: true } },
       { path: 'pos', name: 'POS', component: () => import('../views/erp/POS.vue'), meta: { requiresOutlet: true } },
       { path: 'history', name: 'History', component: () => import('../views/erp/History.vue'), meta: { requiresOutlet: true } },
@@ -84,7 +87,7 @@ const routes = [
 ];
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(),
   routes
 });
 

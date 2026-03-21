@@ -29,11 +29,16 @@
             <strong>Rp {{ fmt(calculateHPP(p.recipe)) }}</strong>
           </div>
           <div class="fin-box sell">
-            <span>Harga Jual</span>
+            <span>Harga Dasar</span>
+            <strong>Rp {{ fmt(p.base_price || p.price) }}</strong>
+          </div>
+          <div class="fin-box final">
+            <span>Harga Final (POS)</span>
             <strong>Rp {{ fmt(p.price) }}</strong>
+            <small v-if="p.tax_rate > 0" class="tax-badge">inc PPN {{ p.tax_rate }}%</small>
           </div>
           <div class="fin-box margin">
-            <span>Margin</span>
+            <span>Margin (dari Final)</span>
             <strong>Rp {{ fmt(p.price - calculateHPP(p.recipe)) }}</strong>
           </div>
         </div>
@@ -73,9 +78,27 @@
                 </datalist>
               </div>
               <div class="field">
-                <label>Harga Jual (Rp) *</label>
-                <input v-model.number="form.price" type="number" required />
+                <label>Harga Jual Dasar (Rp) *</label>
+                <input v-model.number="form.base_price" type="number" required />
               </div>
+            </div>
+
+            <div class="field-row" style="background:#f9f9f9; padding:10px; border-radius:8px; margin-bottom:1.25rem;">
+              <div class="field" style="margin-bottom:0;">
+                <label>Pajak PPN (%)</label>
+                <input v-model.number="form.tax_rate" type="number" min="0" max="100" placeholder="0" />
+              </div>
+              <div class="field" style="margin-bottom:0; justify-content:center;">
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; user-select:none;">
+                  <input type="checkbox" v-model="form.is_roundup" style="width:20px; height:20px;" />
+                  <span>Bulatkan Harga (Roundup ke ribuan teratas)</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="calculated-price-box">
+              <span>Estimasi Harga Final di Kasir (POS):</span>
+              <strong>Rp {{ fmt(calculatedFinalPrice) }}</strong>
             </div>
 
             <div class="recipe-builder">
@@ -138,7 +161,18 @@ const outletId = ref('');
 const showModal = ref(false);
 const editingId = ref(null);
 
-const form = reactive({ name: '', category: '', price: 0, recipe: [] });
+const form = reactive({ name: '', category: '', base_price: 0, tax_rate: 0, is_roundup: false, recipe: [] });
+
+const calculatedFinalPrice = computed(() => {
+  let base = form.base_price || 0;
+  let tax = base * ((form.tax_rate || 0) / 100);
+  let total = base + tax;
+  if (form.is_roundup) {
+    // Roundup ke angka ribuan teratas, misal 16.650 -> 17.000, 16.001 -> 17.000, dst.
+    total = Math.ceil(total / 1000) * 1000;
+  }
+  return total;
+});
 
 const fmt = (n) => Number(n || 0).toLocaleString('id-ID');
 
@@ -185,18 +219,22 @@ const calculateHPP = (recipeArray) => {
 };
 
 const currentFormHPP = computed(() => calculateHPP(form.recipe));
-const currentFormMargin = computed(() => form.price - currentFormHPP.value);
+const currentFormMargin = computed(() => calculatedFinalPrice.value - currentFormHPP.value);
 
 const openAddModal = () => {
   editingId.value = null;
-  form.name = ''; form.category = ''; form.price = 0;
+  form.name = ''; form.category = ''; form.base_price = 0; 
+  form.tax_rate = 0; form.is_roundup = false;
   form.recipe = [];
   showModal.value = true;
 };
 
 const openEditModal = (p) => {
   editingId.value = p.id;
-  form.name = p.name; form.category = p.category; form.price = p.price;
+  form.name = p.name; form.category = p.category; 
+  form.base_price = p.base_price || p.price; 
+  form.tax_rate = p.tax_rate || 0;
+  form.is_roundup = p.is_roundup || false;
   // Deep copy array
   form.recipe = (p.recipe || []).map(r => ({ ...r }));
   showModal.value = true;
@@ -223,7 +261,10 @@ const handleSave = async () => {
     const payload = {
       name: form.name,
       category: form.category,
-      price: form.price,
+      base_price: form.base_price,
+      tax_rate: form.tax_rate,
+      is_roundup: form.is_roundup,
+      price: calculatedFinalPrice.value, // Harga FIX untuk kasir
       recipe: [...form.recipe] // Save recipe configuration
     };
     
@@ -273,13 +314,20 @@ onMounted(loadData);
 
 .product-name { margin: 0; font-size: 1.3rem; color: #333; }
 
-.finance-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; background: #fafbfc; padding: 0.75rem; border-radius: 8px; border: 1px dashed #ddd; }
+.finance-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; background: #fafbfc; padding: 0.75rem; border-radius: 8px; border: 1px dashed #ddd; }
 .fin-box { display: flex; flex-direction: column; gap: 4px; }
 .fin-box span { font-size: 0.75rem; color: #888; text-transform: uppercase; }
 .fin-box strong { font-size: 0.95rem; color: #333; }
 .fin-box.margin strong { color: #1565c0; }
 .fin-box.hpp strong { color: #d32f2f; }
-.fin-box.sell strong { color: #2e7d32; }
+.fin-box.sell strong { color: #666; }
+.fin-box.final strong { color: #2e7d32; }
+
+.tax-badge { font-size: 0.65rem; background: #ffe0b2; color: #e65100; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 2px; }
+
+.calculated-price-box { background: #e3f2fd; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; border: 1px dashed #90caf9;}
+.calculated-price-box span { font-size: 0.95rem; color: #1565c0; font-weight: bold; }
+.calculated-price-box strong { font-size: 1.25rem; color: #0d47a1; }
 
 .recipe-list h4 { margin: 0 0 6px 0; font-size: 0.85rem; color: #555; text-transform: uppercase; }
 .recipe-list ul { margin: 0; padding-left: 1.25rem; font-size: 0.85rem; color: #555; }

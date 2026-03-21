@@ -1,6 +1,6 @@
 import { db, auth } from '../firebase';
 import {
-  collection, query, where, getDocs, addDoc,
+  collection, query, where, getDocs, addDoc, getDoc,
   doc, updateDoc, deleteDoc, serverTimestamp, orderBy,
   writeBatch, increment
 } from 'firebase/firestore';
@@ -127,6 +127,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
     discount_amount: discountAmount,
     discount_type: discountInfo ? discountInfo.type : null,
     total: total,
+    total_hpp: totalHpp, // SAVE HPP HISTORY TO AVOID RECALCULATION ON VOID LATER
     payment_method: paymentInfo.method,
     cash_received: paymentInfo.method === 'cash' ? paymentInfo.cash_received : null,
     change: paymentInfo.method === 'cash' ? paymentInfo.change : null,
@@ -136,12 +137,26 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
 
   // Potong stok bahan baku berdasarkan resep setiap item di keranjang
   const ingredientDeductions = {};
+
   for (const item of cartItems) {
     if (item.recipe && Array.isArray(item.recipe)) {
       for (const req of item.recipe) {
         if (!ingredientDeductions[req.ingredient_id]) ingredientDeductions[req.ingredient_id] = 0;
         ingredientDeductions[req.ingredient_id] += (req.qty * item.qty);
       }
+    }
+  }
+
+  // Hitung HPP dengan mengambil harga valid/terbaru dari master bahan baku
+  let totalHpp = 0;
+  
+  for (const [ingId, qtyDeducted] of Object.entries(ingredientDeductions)) {
+    const ingRef = doc(db, 'ingredients', ingId);
+    const ingSnap = await getDoc(ingRef);
+    if (ingSnap.exists()) {
+      const ingData = ingSnap.data();
+      const cost = ingData.costPerUnit || 0;
+      totalHpp += (cost * qtyDeducted);
     }
   }
 
@@ -160,6 +175,76 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
       user_uid: user?.uid || '',
       created_at: serverTimestamp()
     });
+  }
+
+  // ─────────────────────────────────────────────
+  // AKUNTANSI LOKAL (DOUBLE ENTRY)
+  // ─────────────────────────────────────────────
+  // Ambil data akun terlebih dahulu
+  const accSnap = await getDocs(query(collection(db, 'accounts'), where('outlet_id', '==', outletId)));
+  const accounts = accSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const cashAcc = accounts.find(a => a.code === '101');
+  const qrisAcc = accounts.find(a => a.code === '102');
+  const inventoryAcc = accounts.find(a => a.code === '103');
+  const revenueAcc = accounts.find(a => a.code === '401');
+  const hppAcc = accounts.find(a => a.code === '501');
+
+  if (revenueAcc && (cashAcc || qrisAcc)) {
+    const journalRef = doc(collection(db, 'journals'));
+    batch.set(journalRef, {
+      outlet_id: outletId,
+      date: serverTimestamp(),
+      description: `Penjualan POS #${orderRef.id.slice(-6).toUpperCase()}`,
+      reference_type: 'sale',
+      reference_id: orderRef.id,
+      created_by: user?.uid || '',
+      created_at: serverTimestamp()
+    });
+
+    const debitAcc = paymentInfo.method === 'cash' ? cashAcc : qrisAcc;
+    if (debitAcc && total > 0) {
+      // 1. Catat Pemasukan Kas Kasir (Debit) / Bank
+      batch.set(doc(collection(db, 'journal_entries')), {
+        journal_id: journalRef.id,
+        account_id: debitAcc.id,
+        type: 'debit',
+        amount: total,
+        outlet_id: outletId,
+        created_at: serverTimestamp()
+      });
+      // 2. Catat Pendapatan (Kredit)
+      batch.set(doc(collection(db, 'journal_entries')), {
+        journal_id: journalRef.id,
+        account_id: revenueAcc.id,
+        type: 'credit',
+        amount: total,
+        outlet_id: outletId,
+        created_at: serverTimestamp()
+      });
+    }
+
+    // 3. Jurnal HPP (Jika ada HPP > 0 dan akun tersedia)
+    if (totalHpp > 0 && hppAcc && inventoryAcc) {
+      // Debit HPP
+      batch.set(doc(collection(db, 'journal_entries')), {
+        journal_id: journalRef.id,
+        account_id: hppAcc.id,
+        type: 'debit',
+        amount: totalHpp,
+        outlet_id: outletId,
+        created_at: serverTimestamp()
+      });
+      // Kredit Persediaan
+      batch.set(doc(collection(db, 'journal_entries')), {
+        journal_id: journalRef.id,
+        account_id: inventoryAcc.id,
+        type: 'credit',
+        amount: totalHpp,
+        outlet_id: outletId,
+        created_at: serverTimestamp()
+      });
+    }
   }
 
   await batch.commit();
@@ -185,6 +270,10 @@ export const voidOrder = async (orderId, items) => {
   const batch = writeBatch(db);
   
   const orderRef = doc(db, 'orders', orderId);
+  // Fetch old data to know payment method and total
+  const docSnap = await getDoc(orderRef);
+  if (!docSnap.exists()) return;
+
   batch.update(orderRef, {
     status: 'voided',
     voided_at: serverTimestamp()
@@ -217,6 +306,91 @@ export const voidOrder = async (orderId, items) => {
       user_uid: auth.currentUser?.uid || '',
       created_at: serverTimestamp()
     });
+  }
+
+  // Jurnal Reversal (Pembatalan) jika Akun tersedia
+  const outletId = docSnap.data().outlet_id || '';
+  if (outletId) {
+    const accSnap = await getDocs(query(collection(db, 'accounts'), where('outlet_id', '==', outletId)));
+    const accounts = accSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    
+    // Ambil totalHpp dari database pesanan, karena kita butuh nilai fix saat order tsb terjadi.
+    // Jika tidak tersimpan di Doc orders, kita harus hitung ulang saat Void (atau fallback nol jika tidak komplit trackingnya).
+    // Karena kita baru menambah HPP calculation, kita hitung ulang berdasarkan cost bahan baku SAAT INI sebagai pendekatan.
+    let historicalHpp = docSnap.data().total_hpp || 0;
+    
+    if (!historicalHpp) {
+      for (const [ingId, qtyRestored] of Object.entries(ingredientRestorations)) {
+        const ingSnap = await getDoc(doc(db, 'ingredients', ingId));
+        if (ingSnap.exists()) historicalHpp += (ingSnap.data().costPerUnit || 0) * qtyRestored;
+      }
+    }
+
+    const cashAcc = accounts.find(a => a.code === '101');
+    const qrisAcc = accounts.find(a => a.code === '102');
+    const inventoryAcc = accounts.find(a => a.code === '103');
+    const revenueAcc = accounts.find(a => a.code === '401');
+    const hppAcc = accounts.find(a => a.code === '501');
+    const returnAcc = accounts.find(a => a.code === '505') || revenueAcc; // Jika retur tak ada, potong pendapatan lgsg
+    
+    if (returnAcc) {
+      const journalRef = doc(collection(db, 'journals'));
+      batch.set(journalRef, {
+        outlet_id: outletId,
+        date: serverTimestamp(),
+        description: `Void Penjualan #${orderId.slice(-6).toUpperCase()}`,
+        reference_type: 'void',
+        reference_id: orderId,
+        created_by: auth.currentUser?.uid || '',
+        created_at: serverTimestamp()
+      });
+
+      const paymentMethod = docSnap.data().payment_method;
+      const total = docSnap.data().total || 0;
+      const creditAcc = paymentMethod === 'cash' ? cashAcc : qrisAcc;
+      
+      if (creditAcc && total > 0) {
+        // Void membalik jurnal: Pendapatan Debit, Kas Kredit
+        batch.set(doc(collection(db, 'journal_entries')), {
+          journal_id: journalRef.id,
+          account_id: returnAcc.id,
+          type: 'debit',
+          amount: total,
+          outlet_id: outletId,
+          created_at: serverTimestamp()
+        });
+        batch.set(doc(collection(db, 'journal_entries')), {
+          journal_id: journalRef.id,
+          account_id: creditAcc.id,
+          type: 'credit',
+          amount: total,
+          outlet_id: outletId,
+          created_at: serverTimestamp()
+        });
+      }
+
+      // Reversal HPP
+      if (historicalHpp > 0 && hppAcc && inventoryAcc) {
+        // Debit Persediaan (bertambah)
+        batch.set(doc(collection(db, 'journal_entries')), {
+          journal_id: journalRef.id,
+          account_id: inventoryAcc.id,
+          type: 'debit',
+          amount: historicalHpp,
+          outlet_id: outletId,
+          created_at: serverTimestamp()
+        });
+        // Kredit HPP (beban berkurang)
+        batch.set(doc(collection(db, 'journal_entries')), {
+          journal_id: journalRef.id,
+          account_id: hppAcc.id,
+          type: 'credit',
+          amount: historicalHpp,
+          outlet_id: outletId,
+          created_at: serverTimestamp()
+        });
+      }
+    }
   }
 
   await batch.commit();

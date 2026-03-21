@@ -9,7 +9,7 @@
 
     <!-- TABS -->
     <div class="report-tabs">
-      <button :class="['tab-btn', { active: activeTab === 'sales' }]" @click="activeTab = 'sales'">💰 Laporan Penjualan</button>
+      <button :class="['tab-btn', { active: activeTab === 'sales' }]" @click="activeTab = 'sales'">💰 Laba / Rugi (P&L)</button>
       <button :class="['tab-btn', { active: activeTab === 'stock' }]" @click="activeTab = 'stock'">📦 Nilai Aset Stok</button>
     </div>
 
@@ -28,21 +28,21 @@
       </div>
 
       <div class="summary-cards" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
-        <div class="card bg-primary">
-          <span>Pendapatan Bersih (Net)</span>
+        <div class="card" style="background: linear-gradient(135deg, #1565c0, #0d47a1);">
+          <span>Pendapatan POS (Omset)</span>
           <strong>Rp {{ fmt(salesSummary.revenue) }}</strong>
         </div>
+        <div class="card" style="background: linear-gradient(135deg, #d32f2f, #b71c1c);">
+          <span>Total Pengeluaran Kas</span>
+          <strong>- Rp {{ fmt(salesSummary.totalExpense) }}</strong>
+        </div>
         <div class="card bg-secondary">
-          <span>Total Transaksi</span>
-          <strong>{{ salesSummary.txCount }}</strong>
+          <span>Laba Bersih (Net Profit)</span>
+          <strong>Rp {{ fmt(salesSummary.netProfit) }}</strong>
         </div>
         <div class="card bg-light">
-          <span>Penjualan Produk</span>
-          <strong>{{ salesSummary.itemsSold }} Porsi</strong>
-        </div>
-        <div class="card" style="background: #fff5f5; border: 1px solid #ffe3e3; color: #c62828;">
-          <span style="color: #c62828;">Biaya Promo (Loyalty)</span>
-          <strong>- Rp {{ fmt(salesSummary.totalDiscount) }}</strong>
+          <span>Total Penjualan</span>
+          <strong>{{ salesSummary.txCount }} Transaksi</strong>
         </div>
       </div>
 
@@ -131,7 +131,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { auth, db } from '../../firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { getOrdersByOutlet, getIngredientsByOutlet } from '../../services/posService';
 
 const loading = ref(true);
@@ -141,6 +141,8 @@ const activeView = computed(() => activeTab.value);
 const outletId = ref('');
 const allOrders = ref([]);
 const filteredOrders = ref([]);
+const allExpenses = ref([]);
+const filteredExpenses = ref([]);
 const ingredients = ref([]);
 const timeRange = ref('today');
 
@@ -172,6 +174,13 @@ const applySalesFilter = () => {
     const ts = o.created_at?.toMillis ? o.created_at.toMillis() : 0;
     return ts >= startTime;
   });
+
+  filteredExpenses.value = allExpenses.value.filter(e => {
+    if (timeRange.value === 'all') return true;
+    // Format date is YYYY-MM-DD
+    const ts = new Date(e.date).getTime();
+    return ts >= startTime;
+  });
 };
 
 const salesSummary = computed(() => {
@@ -183,6 +192,8 @@ const salesSummary = computed(() => {
     itemsSold: 0,
     methodCash: 0,
     methodQris: 0,
+    totalExpense: 0,
+    netProfit: 0,
     topProducts: []
   };
 
@@ -206,6 +217,12 @@ const salesSummary = computed(() => {
       productMap[item.name].revenue += item.subtotal;
     });
   });
+
+  filteredExpenses.value.forEach(e => {
+    sum.totalExpense += (e.amount || 0);
+  });
+
+  sum.netProfit = sum.revenue - sum.totalExpense;
 
   // Convert map to sorted array
   sum.topProducts = Object.values(productMap).sort((a,b) => b.qty - a.qty).slice(0, 10);
@@ -236,12 +253,17 @@ const loadData = async () => {
     
     outletId.value = oid || '';
     if (outletId.value) {
+      const qExp = query(collection(db, 'expenses'), where('outlet_id', '==', outletId.value));
+      const expSnap = await getDocs(qExp);
+
       const [ordrs, ings] = await Promise.all([
         getOrdersByOutlet(outletId.value),
         getIngredientsByOutlet(outletId.value)
       ]);
+      
       allOrders.value = ordrs;
       ingredients.value = ings;
+      allExpenses.value = expSnap.docs.map(d => ({ id: d.id, ...d.data() }));
       
       applySalesFilter(); // Apply initial filter
     }
