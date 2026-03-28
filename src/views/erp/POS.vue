@@ -100,84 +100,92 @@
       <div class="payment-modal">
         <h2>Pembayaran</h2>
 
-        <div class="pay-total">
-          <span>Subtotal</span>
-          <strong>Rp {{ fmt(grandTotal) }}</strong>
-        </div>
+        <div class="pm-grid">
+          <!-- KOLOM KIRI: Rincian Tagihan & Backdate -->
+          <div class="pm-left">
+            <div class="pay-total">
+              <span>Subtotal</span>
+              <strong>Rp {{ fmt(grandTotal) }}</strong>
+            </div>
 
-        <div class="pay-promo" v-if="hasPromoEligibleItem" style="margin-top:0.75rem;">
-          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#1565c0; font-weight:bold;">
-            <input type="checkbox" v-model="usePromoTukarNota" style="transform:scale(1.3)" />
-            <span>🎁 Tukar 10 Nota (Gratis 1 Produk Termurah)</span>
-          </label>
-        </div>
-        <div class="pay-total" v-if="usePromoTukarNota" style="margin-top:0.5rem; color:#fa5252;">
-          <span>Diskon Loyalty</span>
-          <strong>- Rp {{ fmt(tukarNotaDiscount) }}</strong>
-        </div>
-        
-        <div class="pay-total" style="margin-top:0.5rem; border-top:1px dashed #ccc; padding-top:0.5rem; color:#1565c0; font-size:1.3rem;">
-          <span>Total Akhir</span>
-          <strong>Rp {{ fmt(finalTotal) }}</strong>
-        </div>
+            <div class="pay-promo" v-if="hasPromoEligibleItem" style="margin-top:0.75rem;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:#1565c0; font-weight:bold;">
+                <input type="checkbox" v-model="usePromoTukarNota" style="transform:scale(1.3)" />
+                <span>🎁 Tukar 10 Nota (Gratis 1 Produk)</span>
+              </label>
+            </div>
+            <div class="pay-total" v-if="usePromoTukarNota" style="margin-top:0.5rem; color:#fa5252;">
+              <span>Diskon Loyalty</span>
+              <strong>- Rp {{ fmt(tukarNotaDiscount) }}</strong>
+            </div>
+            
+            <div class="pay-total" style="margin-top:0.5rem; border-top:1px dashed #ccc; padding-top:0.5rem; color:#1565c0; font-size:1.3rem;">
+              <span>Total Akhir</span>
+              <strong>Rp {{ fmt(finalTotal) }}</strong>
+            </div>
 
-        <div v-if="userRole === 'owner' || userRole === 'superadmin'" class="backdate-options" style="margin-top:1rem; padding:1rem; background:#fff3cd; border-radius:8px; font-size:0.9rem; text-align:left;">
-          <strong style="color:#856404; display:block; margin-bottom:8px;">⚙️ Opsi Khusus Owner (Input Data Lama):</strong>
-          <div style="margin-bottom:8px;">
-            <label style="font-weight:bold; color:#333;">Tanggal Transaksi (Opsional):</label>
-            <input type="datetime-local" v-model="customDate" style="width:100%; padding:0.5rem; margin-top:4px; border-radius:4px; border:1px solid #ccc;"/>
+            <div v-if="userRole === 'owner' || userRole === 'superadmin'" class="backdate-options" style="margin-top:1rem; padding:1rem; background:#fff3cd; border-radius:8px; font-size:0.9rem; text-align:left;">
+              <strong style="color:#856404; display:block; margin-bottom:8px;">⚙️ Opsi Khusus Owner (Data Lama):</strong>
+              <div style="margin-bottom:8px;">
+                <label style="font-weight:bold; color:#333;">Tanggal Transaksi:</label>
+                <input type="datetime-local" v-model="customDate" style="width:100%; padding:0.5rem; margin-top:4px; border-radius:4px; border:1px solid #ccc;"/>
+              </div>
+              <div>
+                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:bold; color:#333; line-height: 1.2;">
+                  <input type="checkbox" v-model="skipStock" style="width:20px; height:20px; flex-shrink: 0;" />
+                  Abaikan Potong Stok & HPP (Hanya cetak Omset)
+                </label>
+              </div>
+            </div>
           </div>
-          <div>
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:bold; color:#333;">
-              <input type="checkbox" v-model="skipStock" style="width:16px; height:16px;" />
-              Abaikan Potong Stok & HPP (Hanya cetak Omset)
-            </label>
-          </div>
-        </div>
 
-        <div class="pay-method" style="margin-top:1.5rem;">
-          <label>Metode Pembayaran</label>
-          <div class="method-btns">
-            <button :class="['method-btn', { active: payMethod === 'cash' }]" @click="payMethod = 'cash'">💵 Tunai</button>
-            <button :class="['method-btn', { active: payMethod === 'qris' }]" @click="payMethod = 'qris'">📱 QRIS</button>
-          </div>
-        </div>
+          <!-- KOLOM KANAN: Metode Pembayaran -->
+          <div class="pm-right">
+            <div class="pay-method">
+              <label>Metode Pembayaran</label>
+              <div class="method-btns">
+                <button :class="['method-btn', { active: payMethod === 'cash' }]" @click="payMethod = 'cash'">💵 Tunai</button>
+                <button :class="['method-btn', { active: payMethod === 'qris' }]" @click="payMethod = 'qris'">📱 QRIS</button>
+              </div>
+            </div>
 
-        <div v-if="payMethod === 'cash'" class="pay-cash">
-          <div class="field">
-            <label>Uang Diterima (Rp)</label>
-            <input
-              v-model.number="cashReceived"
-              type="number"
-              :placeholder="grandTotal"
-              @input="onCashInput"
-              ref="cashInput"
-            />
-          </div>
-          <div class="quick-amounts">
-            <button v-for="amt in quickAmounts" :key="amt" @click="cashReceived = amt; onCashInput()" class="quick-btn">
-              {{ fmt(amt) }}
-            </button>
-          </div>
-          <div class="change-row" :class="{ negative: changeDue < 0 }">
-            <span>Kembalian</span>
-            <strong>Rp {{ changeDue < 0 ? '-' + fmt(Math.abs(changeDue)) : fmt(changeDue) }}</strong>
-          </div>
-        </div>
+            <div v-if="payMethod === 'cash'" class="pay-cash">
+              <div class="field">
+                <label>Uang Diterima (Rp)</label>
+                <input
+                  v-model.number="cashReceived"
+                  type="number"
+                  :placeholder="grandTotal"
+                  @input="onCashInput"
+                  ref="cashInput"
+                />
+              </div>
+              <div class="quick-amounts">
+                <button v-for="amt in quickAmounts" :key="amt" @click="cashReceived = amt; onCashInput()" class="quick-btn">
+                  {{ fmt(amt) }}
+                </button>
+              </div>
+              <div class="change-row" :class="{ negative: changeDue < 0 }">
+                <span>Kembalian</span>
+                <strong>Rp {{ changeDue < 0 ? '-' + fmt(Math.abs(changeDue)) : fmt(changeDue) }}</strong>
+              </div>
+            </div>
 
-        <div v-if="payMethod === 'qris'" class="qris-info">
-          <div class="qris-box">📱 Scan QRIS pelanggan di mesin EDC</div>
-        </div>
+            <div v-if="payMethod === 'qris'" class="qris-info">
+              <div class="qris-box">📱 Scan QRIS pelanggan di mesin EDC</div>
+            </div>
 
-        <div class="pay-actions">
-          <button @click="showPayment = false" class="btn-secondary">Batal</button>
-          <button
-            @click="confirmPayment"
-            :disabled="isProcessing || (payMethod === 'cash' && changeDue < 0)"
-            class="btn-primary"
-          >
-            {{ isProcessing ? 'Memproses...' : '✅ Konfirmasi' }}
-          </button>
+            <div class="pay-actions">
+              <button @click="showPayment = false" class="btn-secondary">Batal</button>
+              <button
+                @click="confirmPayment"
+                :disabled="isProcessing || (payMethod === 'cash' && changeDue < 0)"
+                class="btn-primary"
+              >
+                {{ isProcessing ? 'Memproses...' : '✅ Konfirmasi' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -613,14 +621,23 @@ onUnmounted(() => {
 
 /* ── Modals ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-.payment-modal, .receipt-modal { background: white; border-radius: 16px; padding: 2rem; width: 480px; max-width: 95vw; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
-.payment-modal h2, .receipt-modal h2 { margin: 0 0 1.5rem; color: #2d5a27; font-size: 1.5rem; }
+.payment-modal, .receipt-modal { background: white; border-radius: 16px; padding: 2.5rem; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
 
-.pay-total { display: flex; justify-content: space-between; background: #e8f5e9; padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; align-items: center; }
-.pay-total strong { font-size: 1.8rem; color: #1e3d1a; }
+.payment-modal { width: 850px; max-width: 95vw; }
+.receipt-modal { width: 480px; max-width: 95vw; }
 
-.pay-method label { font-size: 0.95rem; font-weight: 700; color: #333; display: block; margin-bottom: 10px; }
-.method-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 1.5rem; }
+.pm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; }
+.pm-right { display: flex; flex-direction: column; justify-content: flex-start; }
+.pay-actions { margin-top: auto; padding-top: 1.5rem; }
+
+.payment-modal h2, .receipt-modal h2 { margin: 0 0 1.5rem; color: #2d5a27; font-size: 1.8rem; }
+
+.pay-total { display: flex; justify-content: space-between; background: #e8f5e9; padding: 1.25rem; border-radius: 12px; margin-bottom: 1rem; align-items: center; }
+.pay-total strong { font-size: 1.6rem; color: #1e3d1a; }
+
+.pay-method { margin-bottom: 1rem; }
+.pay-method label { font-size: 1.05rem; font-weight: 700; color: #333; display: block; margin-bottom: 10px; }
+.method-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .method-btn { padding: 1rem; border-radius: 12px; border: 2px solid #ddd; background: #fafbfc; cursor: pointer; font-weight: bold; font-size: 1.1rem; }
 .method-btn.active { border-color: #2d5a27; background: #e8f5e9; color: #2d5a27; }
 
@@ -710,7 +727,9 @@ onUnmounted(() => {
   .method-btns { grid-template-columns: 1fr; }
   .quick-amounts { grid-template-columns: repeat(2, 1fr); }
   
-  .payment-modal, .receipt-modal { width: 100%; border-radius: 20px 20px 0 0; position: fixed; bottom: 0; left: 0; margin: 0; max-height: 90vh; overflow-y: auto; }
+  /* Payment Modal di HP kembali jadi tumpuk 1 kolom */
+  .pm-grid { grid-template-columns: 1fr; gap: 0; }
+  .payment-modal, .receipt-modal { width: 100%; max-width: 100vw; border-radius: 20px 20px 0 0; position: fixed; bottom: 0; left: 0; margin: 0; max-height: 90vh; overflow-y: auto; padding: 1.5rem; }
   .modal-overlay { align-items: flex-end; }
 }
 
