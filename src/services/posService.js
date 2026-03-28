@@ -2,7 +2,7 @@ import { db, auth } from '../firebase';
 import {
   collection, query, where, getDocs, addDoc, getDoc,
   doc, updateDoc, deleteDoc, serverTimestamp, orderBy,
-  writeBatch, increment
+  writeBatch, increment, Timestamp
 } from 'firebase/firestore';
 
 // ─────────────────────────────────────────────
@@ -118,11 +118,13 @@ export const deleteProduct = async (productId) => {
 /**
  * Simpan transaksi ke Firestore dan potong stok bahan baku berdasarkan resep
  */
-export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo = null) => {
+export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo = null, options = {}) => {
   const user = auth.currentUser;
   const subtotal = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
   const discountAmount = discountInfo ? discountInfo.amount : 0;
   const total = subtotal - discountAmount;
+
+  const createdAt = options.customDate ? Timestamp.fromDate(new Date(options.customDate)) : serverTimestamp();
 
   const batch = writeBatch(db);
 
@@ -141,7 +143,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
     cash_received: paymentInfo.method === 'cash' ? paymentInfo.cash_received : null,
     change: paymentInfo.method === 'cash' ? paymentInfo.change : null,
     status: 'completed',
-    created_at: serverTimestamp()
+    created_at: createdAt
   });
 
   // Potong stok bahan baku berdasarkan resep setiap item di keranjang
@@ -159,31 +161,35 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
   // Hitung HPP dengan mengambil harga valid/terbaru dari master bahan baku
   let totalHpp = 0;
   
-  for (const [ingId, qtyDeducted] of Object.entries(ingredientDeductions)) {
-    const ingRef = doc(db, 'ingredients', ingId);
-    const ingSnap = await getDoc(ingRef);
-    if (ingSnap.exists()) {
-      const ingData = ingSnap.data();
-      const cost = ingData.costPerUnit || 0;
-      totalHpp += (cost * qtyDeducted);
+  if (!options.skipStock) {
+    for (const [ingId, qtyDeducted] of Object.entries(ingredientDeductions)) {
+      const ingRef = doc(db, 'ingredients', ingId);
+      const ingSnap = await getDoc(ingRef);
+      if (ingSnap.exists()) {
+        const ingData = ingSnap.data();
+        const cost = ingData.costPerUnit || 0;
+        totalHpp += (cost * qtyDeducted);
+      }
     }
   }
 
-  for (const [ingId, qtyDeducted] of Object.entries(ingredientDeductions)) {
-    const ingRef = doc(db, 'ingredients', ingId);
-    batch.update(ingRef, { stock: increment(-qtyDeducted) });
-    
-    // Log movement
-    const logRef = doc(collection(db, 'stock_movements'));
-    batch.set(logRef, {
-      outlet_id: outletId,
-      ingredient_id: ingId,
-      qty_change: -qtyDeducted,
-      type: 'pos_sale',
-      reference_id: orderRef.id,
-      user_uid: user?.uid || '',
-      created_at: serverTimestamp()
-    });
+  if (!options.skipStock) {
+    for (const [ingId, qtyDeducted] of Object.entries(ingredientDeductions)) {
+      const ingRef = doc(db, 'ingredients', ingId);
+      batch.update(ingRef, { stock: increment(-qtyDeducted) });
+      
+      // Log movement
+      const logRef = doc(collection(db, 'stock_movements'));
+      batch.set(logRef, {
+        outlet_id: outletId,
+        ingredient_id: ingId,
+        qty_change: -qtyDeducted,
+        type: 'pos_sale',
+        reference_id: orderRef.id,
+        user_uid: user?.uid || '',
+        created_at: createdAt
+      });
+    }
   }
 
   // ─────────────────────────────────────────────
@@ -203,12 +209,12 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
     const journalRef = doc(collection(db, 'journals'));
     batch.set(journalRef, {
       outlet_id: outletId,
-      date: serverTimestamp(),
+      date: createdAt,
       description: `Penjualan POS #${orderRef.id.slice(-6).toUpperCase()}`,
       reference_type: 'sale',
       reference_id: orderRef.id,
       created_by: user?.uid || '',
-      created_at: serverTimestamp()
+      created_at: createdAt
     });
 
     const debitAcc = paymentInfo.method === 'cash' ? cashAcc : qrisAcc;
@@ -220,7 +226,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
         type: 'debit',
         amount: total,
         outlet_id: outletId,
-        created_at: serverTimestamp()
+        created_at: createdAt
       });
       // 2. Catat Pendapatan (Kredit)
       batch.set(doc(collection(db, 'journal_entries')), {
@@ -229,7 +235,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
         type: 'credit',
         amount: total,
         outlet_id: outletId,
-        created_at: serverTimestamp()
+        created_at: createdAt
       });
     }
 
@@ -242,7 +248,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
         type: 'debit',
         amount: totalHpp,
         outlet_id: outletId,
-        created_at: serverTimestamp()
+        created_at: createdAt
       });
       // Kredit Persediaan
       batch.set(doc(collection(db, 'journal_entries')), {
@@ -251,7 +257,7 @@ export const createOrder = async (outletId, cartItems, paymentInfo, discountInfo
         type: 'credit',
         amount: totalHpp,
         outlet_id: outletId,
-        created_at: serverTimestamp()
+        created_at: createdAt
       });
     }
   }

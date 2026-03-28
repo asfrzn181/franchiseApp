@@ -121,6 +121,20 @@
           <strong>Rp {{ fmt(finalTotal) }}</strong>
         </div>
 
+        <div v-if="userRole === 'owner' || userRole === 'superadmin'" class="backdate-options" style="margin-top:1rem; padding:1rem; background:#fff3cd; border-radius:8px; font-size:0.9rem; text-align:left;">
+          <strong style="color:#856404; display:block; margin-bottom:8px;">⚙️ Opsi Khusus Owner (Input Data Lama):</strong>
+          <div style="margin-bottom:8px;">
+            <label style="font-weight:bold; color:#333;">Tanggal Transaksi (Opsional):</label>
+            <input type="datetime-local" v-model="customDate" style="width:100%; padding:0.5rem; margin-top:4px; border-radius:4px; border:1px solid #ccc;"/>
+          </div>
+          <div>
+            <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:bold; color:#333;">
+              <input type="checkbox" v-model="skipStock" style="width:16px; height:16px;" />
+              Abaikan Potong Stok & HPP (Hanya cetak Omset)
+            </label>
+          </div>
+        </div>
+
         <div class="pay-method" style="margin-top:1.5rem;">
           <label>Metode Pembayaran</label>
           <div class="method-btns">
@@ -258,6 +272,9 @@ const loadingProducts = ref(true);
 const search = ref('');
 const activeTab = ref('Semua');
 const outletId = ref('');
+const userRole = ref('');
+const customDate = ref('');
+const skipStock = ref(false);
 
 // Cart
 const cart = ref([]);
@@ -448,7 +465,16 @@ const confirmPayment = async () => {
     
     const discountInfo = usePromoTukarNota.value ? { type: 'tukar_nota', amount: tukarNotaDiscount.value } : null;
 
-    const orderId = await createOrder(outletId.value, [...cart.value], payInfo, discountInfo);
+    const options = {
+      customDate: customDate.value || null,
+      skipStock: skipStock.value
+    };
+
+    const orderId = await createOrder(outletId.value, [...cart.value], payInfo, discountInfo, options);
+
+    // Reset backdate state
+    customDate.value = '';
+    skipStock.value = false;
 
     // Save for receipt
     lastOrderId.value = orderId;
@@ -482,6 +508,7 @@ const loadProducts = async () => {
     
     const snap = await getDoc(doc(db, 'users', user.uid));
     const userData = snap.data() || {};
+    userRole.value = userData.role || '';
     let oid = userData.outlet_id || localStorage.getItem('active_outlet_id');
     if (oid === 'undefined') oid = null;
     
